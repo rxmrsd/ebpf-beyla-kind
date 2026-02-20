@@ -1,8 +1,3 @@
----
-title: eBPF × Grafana Beyla × kindで体感するゼロコード計装
-tags: eBPF Kubernetes Observability Grafana OpenTelemetry
----
-
 ## はじめに
 
 アプリケーションのObservabilityを実現するには、これまでOpenTelemetry SDKをコードに組み込む「手動計装」が一般的でした。しかし、言語ごとにSDKを導入し、コードを修正し、依存関係を管理する作業は無視できないコストです。
@@ -29,23 +24,7 @@ BeylaはKubernetes上ではDaemonSetとして各ノードにデプロイされ�
 
 今回構築する環境の全体像です。
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  kind クラスタ (ebpf-demo)                                    │
-│                                                              │
-│  ┌─── namespace: app ────────────────────────────────────┐   │
-│  │                                                       │   │
-│  │  Client ──→ Nginx (:80) ──→ Go API (:8080) ──→ PostgreSQL (:5432) │
-│  │             NodePort:30080                            │   │
-│  └───────────────────────────────────────────────────────┘   │
-│                          ↑ eBPF フック                        │
-│  ┌─── namespace: observability ──────────────────────────┐   │
-│  │                                                       │   │
-│  │  Beyla ──→ OTel Collector ──→ Tempo ──→ Grafana       │   │
-│  │  (DaemonSet)                        NodePort:30030    │   │
-│  └───────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3618319/82c337ef-c2d2-46e9-92a2-cb502e38066a.png)
 
 - **Nginx**: リバースプロキシとして`/api/`へのリクエストをGo APIに転送
 - **Go API**: `net/http` + `database/sql`のみで構成したシンプルなTODO CRUD API
@@ -69,8 +48,10 @@ BeylaはKubernetes上ではDaemonSetとして各ノードにデプロイされ�
 
 ### サンプルリポジトリの取得
 
+https://github.com/rxmrsd/ebpf-beyla-kind
+
 ```bash
-git clone https://github.com/<your-username>/ebpf-beyla-kind.git
+git clone https://github.com/rxmrsd/ebpf-beyla-kind.git
 cd ebpf-beyla-kind
 ```
 
@@ -229,7 +210,7 @@ done
 
 ### Grafanaでトレースを確認
 
-ブラウザで**http://localhost:3000**にアクセスします（認証なしでAdminとして自動ログインします）。
+ブラウザで http://localhost:3000 にアクセスします（認証なしでAdminとして自動ログインします）。
 
 1. 左メニューの**Explore**を開く
 2. データソースで**Tempo**を選択
@@ -245,6 +226,9 @@ done
 
 これらすべてが、**アプリケーションコードに一行も計装コードを追加せずに**取得できています。
 
+![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3618319/622fa2dc-36e9-4fb8-a453-28a6f83ba21f.png)
+
+
 ## Beylaの仕組み深掘り
 
 ### eBPFによるカーネルレベルのフック
@@ -255,28 +239,10 @@ BeylaはeBPFプログラムをカーネルに注入し、以下のポイント�
 2. **HTTP/gRPCパーサー**: カーネル空間でプロトコルを解析し、リクエスト/レスポンスのメタデータを抽出
 3. **言語固有のフック**: Goの`net/http`やJavaの`java.net`など、ランタイムの既知関数にuprobesでアタッチ
 
-```
-┌──────────────────────────────────────────────┐
-│  ユーザー空間                                   │
-│                                               │
-│  Go API        Nginx        PostgreSQL        │
-│    │              │              │             │
-├────┼──────────────┼──────────────┼─────────────┤
-│  カーネル空間                                    │
-│    │              │              │             │
-│  eBPF プログラム（Beyla が注入）                   │
-│    ↓              ↓              ↓             │
-│  syscall フック: accept, read, write, close     │
-│    │                                          │
-│    ↓                                          │
-│  eBPF Map（リングバッファ）                       │
-│    │                                          │
-├────┼──────────────────────────────────────────┤
-│  ユーザー空間                                   │
-│    ↓                                          │
-│  Beyla プロセス → OTLP → OTel Collector        │
-└──────────────────────────────────────────────┘
-```
+
+![image.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3618319/81e32a1c-14c0-4375-9e91-70d3538b77c0.png)
+
+
 
 eBPFプログラムはカーネル内の検証器（verifier）を通過する必要があり、安全性が保証されています。無限ループやカーネルクラッシュを引き起こすコードはロードされません。
 
