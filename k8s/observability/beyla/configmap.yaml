@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beyla-config
+  namespace: observability
+data:
+  beyla-config.yml: |
+    log_level: info
+    discovery:
+      services:
+        - k8s_namespace: app
+          open_ports: 8080,5432
+    otel_traces_export:
+      endpoint: http://otel-collector.observability:4317
+      protocol: grpc
+    otel_metrics_export:
+      endpoint: http://otel-collector.observability:4317
+      protocol: grpc
+    attributes:
+      kubernetes:
+        enable: true
+    sampling:
+      override: false
